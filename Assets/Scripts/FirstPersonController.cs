@@ -68,6 +68,27 @@ public class FirstPersonController : MonoBehaviour
     [Tooltip("If true, your own body casts a shadow on the floor. If false, no shadow is cast by your own body.")]
     [SerializeField] private bool castLocalShadow = false;
 
+    public enum PerspectiveMode
+    {
+        FirstPerson,
+        ThirdPerson
+    }
+
+    [Header("Perspective (1st / 3rd Person)")]
+    [Tooltip("Current camera perspective.")]
+    [SerializeField] private PerspectiveMode currentPerspective = PerspectiveMode.FirstPerson;
+
+    [Tooltip("Camera offset in third-person mode relative to eye pivot.")]
+    [SerializeField] private Vector3 thirdPersonOffset = new Vector3(0.35f, 0.15f, -2.8f);
+
+    [Tooltip("Speed of camera transition between perspectives.")]
+    [SerializeField] private float perspectiveTransitionSpeed = 14f;
+
+    [Tooltip("Layers that obstruct third-person camera (e.g. walls).")]
+    [SerializeField] private LayerMask cameraCollisionMask = ~0;
+
+    public PerspectiveMode CurrentPerspective => currentPerspective;
+
     // Internal components
     private CharacterController characterController;
     private Rigidbody rb;
@@ -120,8 +141,8 @@ public class FirstPersonController : MonoBehaviour
             return;
         }
 
-        // If not in a room yet (e.g. while in Lobby), keep cursor completely free for UI
-        if (!PhotonNetwork.InRoom)
+        // If connected to Photon but not in a room yet (e.g. while in Lobby), keep cursor completely free for UI
+        if (PhotonNetwork.IsConnected && !PhotonNetwork.InRoom)
         {
             SetCursorLocked(false);
             return;
@@ -153,9 +174,19 @@ public class FirstPersonController : MonoBehaviour
     {
 #if PHOTON_UNITY_NETWORKING
         // While in lobby, keep cursor free and do not process character input
-        if (!PhotonNetwork.InRoom) return;
+        if (PhotonNetwork.IsConnected && !PhotonNetwork.InRoom) return;
         if (photonView != null && !photonView.IsMine) return;
 #endif
+
+        // When Game Over is active, freeze look/movement and keep cursor unlocked
+        if (PlayerHealth.IsGameOver)
+        {
+            if (isCursorLocked)
+            {
+                SetCursorLocked(false);
+            }
+            return;
+        }
 
         // When in-game pause/exit menu is open, freeze look/movement and keep cursor unlocked
         if (NetworkManager.Instance != null && NetworkManager.Instance.IsInGameMenuOpen)
@@ -182,6 +213,7 @@ public class FirstPersonController : MonoBehaviour
         }
 
         HandleCursorLockInput();
+        HandlePerspectiveInput();
         HandleLook();
         ReadMovementInput();
         UpdateTimers();
@@ -196,7 +228,10 @@ public class FirstPersonController : MonoBehaviour
     {
 #if PHOTON_UNITY_NETWORKING
         if (photonView != null && !photonView.IsMine) return;
+        if (PhotonNetwork.IsConnected && !PhotonNetwork.InRoom) return;
 #endif
+        if (PlayerHealth.IsGameOver) return;
+
         if (rb != null && !rb.isKinematic && (characterController == null || !characterController.enabled))
         {
             MoveWithRigidbody();
@@ -236,7 +271,7 @@ public class FirstPersonController : MonoBehaviour
         }
     }
 
-    private void SetupMeshVisibility()
+    public void SetupMeshVisibility()
     {
 #if PHOTON_UNITY_NETWORKING
         bool isLocal = (photonView == null || photonView.IsMine);
@@ -246,16 +281,27 @@ public class FirstPersonController : MonoBehaviour
         MeshRenderer[] renderers = GetComponentsInChildren<MeshRenderer>();
         foreach (MeshRenderer r in renderers)
         {
+            if (playerCamera != null && r.transform.IsChildOf(playerCamera)) continue;
+            if (r.gameObject.name.Contains("Beacon") || r.gameObject.name.Contains("Tracer")) continue;
+
             if (isLocal)
             {
-                if (castLocalShadow)
+                if (currentPerspective == PerspectiveMode.ThirdPerson)
                 {
                     r.enabled = true;
-                    r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.ShadowsOnly;
+                    r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
                 }
                 else
                 {
-                    r.enabled = false;
+                    if (castLocalShadow)
+                    {
+                        r.enabled = true;
+                        r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.ShadowsOnly;
+                    }
+                    else
+                    {
+                        r.enabled = false;
+                    }
                 }
             }
             else
@@ -376,7 +422,102 @@ public class FirstPersonController : MonoBehaviour
         // Vertical rotation on the camera (Pitch)
         cameraPitch -= mouseY;
         cameraPitch = Mathf.Clamp(cameraPitch, minPitch, maxPitch);
-        playerCamera.localRotation = Quaternion.Euler(cameraPitch, 0f, 0f);
+
+        if (currentPerspective == PerspectiveMode.FirstPerson)
+        {
+            Vector3 firstPersonPos = new Vector3(0f, eyeHeight, 0.15f);
+            playerCamera.localPosition = Vector3.Lerp(playerCamera.localPosition, firstPersonPos, Time.deltaTime * perspectiveTransitionSpeed);
+            playerCamera.localRotation = Quaternion.Euler(cameraPitch, 0f, 0f);
+        }
+        else
+        {
+            // Third Person Orbit & Wall Collision Avoidance
+            Vector3 pivotLocal = new Vector3(0f, eyeHeight, 0f);
+            Quaternion pitchRot = Quaternion.Euler(cameraPitch, 0f, 0f);
+
+            Vector3 worldPivot = transform.TransformPoint(pivotLocal);
+            Vector3 worldLookDir = transform.rotation * pitchRot * Vector3.forward;
+            Vector3 worldBackDir = -worldLookDir;
+
+            float targetDistance = Mathf.Abs(thirdPersonOffset.z);
+            float actualDistance = targetDistance;
+
+            // SphereCast backwards to prevent camera from clipping into walls
+            if (Physics.SphereCast(worldPivot, 0.22f, worldBackDir, out RaycastHit hit, targetDistance, cameraCollisionMask, QueryTriggerInteraction.Ignore))
+            {
+                if (!hit.transform.IsChildOf(transform))
+                {
+                    actualDistance = Mathf.Clamp(hit.distance - 0.15f, 0.4f, targetDistance);
+                }
+            }
+
+            Vector3 computedLocalOffset = new Vector3(thirdPersonOffset.x, thirdPersonOffset.y, -actualDistance);
+            Vector3 targetLocalPos = pivotLocal + pitchRot * computedLocalOffset;
+
+            playerCamera.localPosition = Vector3.Lerp(playerCamera.localPosition, targetLocalPos, Time.deltaTime * perspectiveTransitionSpeed);
+            playerCamera.localRotation = Quaternion.Euler(cameraPitch, 0f, 0f);
+        }
+    }
+
+    private void HandlePerspectiveInput()
+    {
+        bool togglePressed = false;
+        float scroll = 0f;
+
+#if ENABLE_INPUT_SYSTEM
+        if (Keyboard.current != null)
+        {
+            if (Keyboard.current.vKey.wasPressedThisFrame || Keyboard.current.f5Key.wasPressedThisFrame)
+            {
+                togglePressed = true;
+            }
+        }
+        if (Mouse.current != null)
+        {
+            scroll = Mouse.current.scroll.ReadValue().y;
+        }
+#endif
+
+#if ENABLE_LEGACY_INPUT_MANAGER
+        if (Input.GetKeyDown(KeyCode.V) || Input.GetKeyDown(KeyCode.F5))
+        {
+            togglePressed = true;
+        }
+        if (Mathf.Abs(scroll) < 0.01f)
+        {
+            scroll = Input.GetAxis("Mouse ScrollWheel");
+        }
+#endif
+
+        if (togglePressed)
+        {
+            TogglePerspective();
+        }
+        else if (scroll < -0.1f && currentPerspective == PerspectiveMode.FirstPerson)
+        {
+            SetPerspective(PerspectiveMode.ThirdPerson);
+        }
+        else if (scroll > 0.1f && currentPerspective == PerspectiveMode.ThirdPerson)
+        {
+            SetPerspective(PerspectiveMode.FirstPerson);
+        }
+    }
+
+    public void TogglePerspective()
+    {
+        SetPerspective(currentPerspective == PerspectiveMode.FirstPerson ? PerspectiveMode.ThirdPerson : PerspectiveMode.FirstPerson);
+    }
+
+    public void SetPerspective(PerspectiveMode mode)
+    {
+        currentPerspective = mode;
+        SetupMeshVisibility();
+
+        PlayerShooter shooter = GetComponent<PlayerShooter>();
+        if (shooter != null)
+        {
+            shooter.SetWeaponPerspective(currentPerspective == PerspectiveMode.ThirdPerson);
+        }
     }
 
     private void HandleCursorLockInput()

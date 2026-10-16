@@ -16,6 +16,9 @@ GameObject:
   - component: {fileID: 8901234567890123456}
   - component: {fileID: 8143375416107348696}
   - component: {fileID: 6282621970820026399}
+  - component: {fileID: 7101001001001001001}
+  - component: {fileID: 7101001001001001002}
+  - component: {fileID: 7101001001001001003}
   m_Layer: 0
   m_Name: Player
   m_TagString: Untagged
@@ -350,3 +353,56 @@ MonoBehaviour:
     m_VarianceClampScale: 0.9
     m_ContrastAdaptiveSharpening: 0
   m_Version: 2
+--- !u!114 &7101001001001001001
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1692587632487041251}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a1b2c3d4e5f60718293a4b5c6d7e8f01, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  maxHealth: 100
+  currentHealth: 100
+  destroyOnDeath: 0
+  deathDelay: 0
+  hitEffectPrefab: {fileID: 0}
+  deathEffectPrefab: {fileID: 0}
+--- !u!114 &7101001001001001002
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1692587632487041251}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a1b2c3d4e5f60718293a4b5c6d7e8f02, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+--- !u!114 &7101001001001001003
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1692587632487041251}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a1b2c3d4e5f60718293a4b5c6d7e8f03, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  damage: 35
+  maxRange: 100
+  fireRate: 0.18
+  hitLayers:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  tracerColor: {r: 1, g: 0.85, b: 0.3, a: 0.9}
+  tracerDuration: 0.06
+  enableProceduralAudio: 1
+  soundVolume: 0.45
+

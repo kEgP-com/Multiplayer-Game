@@ -68,6 +68,7 @@ public class NetworkManager : MonoBehaviourPunCallbacks
 
         CleanupSceneDummyPlayers();
         EnsureGroundExists();
+        EnsureEnemySpawnerExists();
     }
 
     private void Start()
@@ -414,6 +415,19 @@ public class NetworkManager : MonoBehaviourPunCallbacks
         ground.transform.localScale = new Vector3(5f, 1f, 5f);
     }
 
+    private void EnsureEnemySpawnerExists()
+    {
+        if (EnemySpawner.Instance != null) return;
+        EnemySpawner spawner = FindFirstObjectByType<EnemySpawner>();
+        if (spawner == null)
+        {
+            GameObject spawnerObj = new GameObject("EnemySpawner");
+            spawner = spawnerObj.AddComponent<EnemySpawner>();
+            spawnerObj.transform.position = new Vector3(0f, 0.5f, 0f);
+            Debug.Log("[NetworkManager] Created EnemySpawner in scene.");
+        }
+    }
+
     private void SpawnFirstPersonPlayer()
     {
         if (hasSpawnedPlayer) return;
@@ -475,14 +489,12 @@ public class NetworkManager : MonoBehaviourPunCallbacks
             alignment = TextAnchor.MiddleCenter,
             normal = { textColor = Color.white }
         };
-        GUILayout.Label("🎮 MULTIPLAYER LOBBY", titleStyle);
+        GUILayout.Label("MULTIPLAYER LOBBY", titleStyle);
         GUILayout.Space(8);
 
         // Status indicator
-        bool isReady = PhotonNetwork.IsConnectedAndReady && PhotonNetwork.Server == ServerConnection.MasterServer;
-        string statusDot = isReady ? "🟢" : (PhotonNetwork.IsConnected ? "🟡" : "🔴");
         string pingText = PhotonNetwork.IsConnected ? $"{PhotonNetwork.GetPing()} ms" : "N/A";
-        GUILayout.Label($"{statusDot} <b>Status:</b> {statusMessage} (Ping: {pingText})");
+        GUILayout.Label($"<b>Status:</b> {statusMessage} (Ping: {pingText})");
         GUILayout.Space(8);
 
         // Player Name input
@@ -502,7 +514,7 @@ public class NetworkManager : MonoBehaviourPunCallbacks
         GUILayout.Space(12);
 
         // Auto Join / Quick Play button
-        string playBtnText = isMatchmakingPending ? "⏳  CONNECTING & ENTERING ROOM..." : "▶  PLAY NOW  (Auto-Join / Quick Match)";
+        string playBtnText = isMatchmakingPending ? "CONNECTING & ENTERING ROOM..." : "PLAY NOW (Auto-Join / Quick Match)";
         if (GUILayout.Button(playBtnText, GUILayout.Height(42)))
         {
             if (!isMatchmakingPending)
@@ -515,7 +527,7 @@ public class NetworkManager : MonoBehaviourPunCallbacks
 
         // Join Specific Room button
         string roomBtnText = string.IsNullOrEmpty(roomNameInput) ? defaultRoomName : roomNameInput;
-        if (GUILayout.Button($"➕  Join or Create Room: '{roomBtnText}'", GUILayout.Height(34)))
+        if (GUILayout.Button($"Join or Create Room: '{roomBtnText}'", GUILayout.Height(34)))
         {
             JoinOrCreateNamedRoom();
         }
@@ -525,7 +537,7 @@ public class NetworkManager : MonoBehaviourPunCallbacks
         // Exit Application button
         Color prevBg = GUI.backgroundColor;
         GUI.backgroundColor = new Color(0.9f, 0.35f, 0.35f);
-        if (GUILayout.Button("❌  EXIT GAME", GUILayout.Height(34)))
+        if (GUILayout.Button("EXIT GAME", GUILayout.Height(34)))
         {
             ExitGame();
         }
@@ -547,7 +559,7 @@ public class NetworkManager : MonoBehaviourPunCallbacks
     {
         float x = 25f;
         float y = 25f;
-        float width = 460f;
+        float width = 560f;
         float height = 70f;
 
         // HUD Card Background
@@ -571,18 +583,29 @@ public class NetworkManager : MonoBehaviourPunCallbacks
             normal = { textColor = new Color(0.9f, 0.9f, 0.9f) }
         };
 
-        GUI.Label(new Rect(x + 14, y + 8, width - 180, 20), $"🟢  Room: <b>{PhotonNetwork.CurrentRoom.Name}</b>", headerStyle);
-        GUI.Label(new Rect(x + 14, y + 28, width - 180, 20), $"Players: <b>{PhotonNetwork.CurrentRoom.PlayerCount}/{PhotonNetwork.CurrentRoom.MaxPlayers}</b>  |  <b>Ping:</b> {pingText}", contentStyle);
-        GUI.Label(new Rect(x + 14, y + 46, width - 180, 18), "<i>Tip: Press [Esc] for Game Menu</i>", new GUIStyle(GUI.skin.label) { fontSize = 10, normal = { textColor = new Color(0.7f, 0.7f, 0.7f) } });
+        GUI.Label(new Rect(x + 14, y + 8, width - 270, 20), $"Room: <b>{PhotonNetwork.CurrentRoom.Name}</b>", headerStyle);
+        GUI.Label(new Rect(x + 14, y + 28, width - 270, 20), $"Players: <b>{PhotonNetwork.CurrentRoom.PlayerCount}</b>  |  Enemies: <b>{EnemySpawner.ActiveEnemyCount}</b>  |  Kills: <b>{EnemySpawner.TotalEnemiesKilled}</b>  |  Ping: {pingText}", contentStyle);
+        GUI.Label(new Rect(x + 14, y + 46, width - 270, 18), "<i>Left-Click: Shoot  |  [V]: 1st/3rd Person  |  [Esc]: Menu</i>", new GUIStyle(GUI.skin.label) { fontSize = 10, normal = { textColor = new Color(0.7f, 0.7f, 0.7f) } });
+
+        // Perspective Toggle Button (1st / 3rd Person)
+        FirstPersonController localPlayer = FindFirstObjectByType<FirstPersonController>();
+        if (localPlayer != null)
+        {
+            string perspText = localPlayer.CurrentPerspective == FirstPersonController.PerspectiveMode.FirstPerson ? "1st View" : "3rd View";
+            if (GUI.Button(new Rect(x + width - 260, y + 15, 80, 40), perspText))
+            {
+                localPlayer.TogglePerspective();
+            }
+        }
 
         // Leave Room Quick Button
-        if (GUI.Button(new Rect(x + width - 175, y + 15, 80, 40), "🚪 Leave"))
+        if (GUI.Button(new Rect(x + width - 175, y + 15, 80, 40), "Leave"))
         {
             LeaveRoom();
         }
 
         // Menu Toggle Button
-        if (GUI.Button(new Rect(x + width - 90, y + 15, 78, 40), showInGameMenu ? "▶ Resume" : "⚙️ Menu"))
+        if (GUI.Button(new Rect(x + width - 90, y + 15, 78, 40), showInGameMenu ? "Resume" : "Menu"))
         {
             ToggleInGameMenu();
         }
@@ -612,7 +635,7 @@ public class NetworkManager : MonoBehaviourPunCallbacks
             alignment = TextAnchor.MiddleCenter,
             normal = { textColor = Color.white }
         };
-        GUILayout.Label("⏸️  GAME MENU", titleStyle);
+        GUILayout.Label("GAME MENU", titleStyle);
         GUILayout.Space(6);
 
         GUIStyle subStyle = new GUIStyle(GUI.skin.label)
@@ -626,7 +649,7 @@ public class NetworkManager : MonoBehaviourPunCallbacks
 
         // Resume Game
         GUI.backgroundColor = new Color(0.3f, 0.8f, 0.4f);
-        if (GUILayout.Button("▶  RESUME GAME", GUILayout.Height(42)))
+        if (GUILayout.Button("RESUME GAME", GUILayout.Height(42)))
         {
             CloseInGameMenu();
         }
@@ -636,7 +659,7 @@ public class NetworkManager : MonoBehaviourPunCallbacks
 
         // Leave Room back to Lobby
         GUI.backgroundColor = new Color(0.95f, 0.7f, 0.25f);
-        if (GUILayout.Button("🚪  LEAVE ROOM  (Back to Lobby)", GUILayout.Height(38)))
+        if (GUILayout.Button("LEAVE ROOM  (Back to Lobby)", GUILayout.Height(38)))
         {
             LeaveRoom();
         }
@@ -646,7 +669,7 @@ public class NetworkManager : MonoBehaviourPunCallbacks
 
         // Exit Application
         GUI.backgroundColor = new Color(0.9f, 0.35f, 0.35f);
-        if (GUILayout.Button("❌  EXIT GAME", GUILayout.Height(38)))
+        if (GUILayout.Button("EXIT GAME", GUILayout.Height(38)))
         {
             ExitGame();
         }
